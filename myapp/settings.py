@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 
 import os
 import sys
+import boto3 
+import json
+from botocore.exceptions import ClientError 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -92,15 +95,65 @@ WSGI_APPLICATION = 'myapp.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
+def get_secret():
+  try:
+    secret_name = os.environ.get('SECRET_NAME', 'secret_app_to_db'),
+    endpoint_url = "https://secretsmanager.ap-southeast-2.amazonaws.com" 
+    region_name = "ap-southeast-2" 
 
+    session = boto3.session.Session() 
+    client = session.client( 
+        service_name='secretsmanager', 
+        region_name=region_name, 
+        endpoint_url=endpoint_url 
+    ) 
+    get_secret_value_response = client.get_secret_value(SecretId=secret_name) 
+  except ClientError as e: 
+    if e.response['Error']['Code'] == 'ResourceNotFoundException': 
+      print("The requested secret " + secret_name + " was not found") 
+    elif e.response['Error']['Code'] == 'InvalidRequestException': 
+      print("The request was invalid due to:", e) 
+    elif e.response['Error']['Code'] == 'InvalidParameterException': 
+      print("The request had invalid params:", e) 
+  except:
+      print("Error - Enable to get secrets")
+  else: 
+    # Decrypted secret using the associated KMS CMK 
+    # Depending on whether the secret was a string or binary, one of these fields will be populated 
+    if 'SecretString' in get_secret_value_response: 
+      secret = get_secret_value_response['SecretString'] 
+      # convert secret tring to dict
+      dict = json.loads(secret)
+      return {
+        'db_name': dict['NAME'],
+        'db_user': dict['USER'],
+        'db_password': dict['PASSWORD'],
+        'db_host': dict['HOST'],
+        'db_port': dict['PORT'],
+      }
+    else: 
+      binary_secret_data = get_secret_value_response['SecretBinary'] 
+      return binary_secret_data
+    
+  # Your code goes here. 
+
+secrets = get_secret()
+if (secrets == None): 
+  secrets = {'db_name': 'myapp_test',
+             'db_user': os.environ.get('POSTGRES_USER', 'postgres'),
+             'db_password': os.environ.get('POSTGRES_PASSWORD', '123456'),
+             'db_host': os.environ.get('POSTGRES_HOSTNAME', 'localhost'),
+             'db_port': '5432',
+             }
+  
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'myapp_test', #os.environ.get('POSTGRES_DB', 'myapp'),
-        'USER': os.environ.get('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', '123456'),
-        'HOST': os.environ.get('POSTGRES_HOSTNAME', 'localhost'),
-        'PORT': '5432'
+        'NAME': secrets['db_name'],
+        'USER': secrets['db_user'],
+        'PASSWORD': secrets['db_password'],
+        'HOST': secrets['db_host'],
+        'PORT': secrets['db_port'],
     }
 }
 
