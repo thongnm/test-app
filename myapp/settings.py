@@ -135,9 +135,36 @@ def get_secret():
       binary_secret_data = get_secret_value_response['SecretBinary'] 
       return binary_secret_data
     
-  # Your code goes here. 
+def get_parameters():
+  # Create the SSM Client
+  ssm = boto3.client('ssm',
+    region_name='ap-southeast-2'
+  )
 
-secrets = get_secret()
+  # Get the requested parameter
+  response = ssm.get_parameters(
+    Names=[
+        'go_app_to_db_address',
+        'go_app_to_db_username',
+        'go_app_to_db_password',
+        'go_app_to_db_dbname',
+        'go_app_to_db_port',
+    ],
+    WithDecryption=True
+  )
+  
+  # Store the credentials in a variable
+  parameters = response['Parameters']
+  credentials = {'db_name': parameters['go_app_to_db_dbname']['Value'],
+                'db_user': parameters['go_app_to_db_username']['Value'],
+                'db_password': parameters['go_app_to_db_password']['Value'],
+                'db_host': parameters['go_app_to_db_address']['Value'],
+                'db_port': parameters['go_app_to_db_port']['Value']
+                }
+  return credentials
+
+# secrets = get_secret()
+secrets = get_parameters()
 if (secrets == None): 
   secrets = {'db_name': 'myapp_test',
              'db_user': os.environ.get('POSTGRES_USER', 'postgres'),
